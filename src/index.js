@@ -57,22 +57,29 @@ async function onFormSubmit(event) {
 //=========== асинк фн. при подгрузке изображений =======
 async function onClickLoadMoreBtn() {
   try {
+    buttonDisabledTrue()
     const response = await fetchPhoto(formInput.value)
     console.log('current page:',options.pageNumber)
     options.pageNumber += 1
     console.log('next page :', options.pageNumber)
     countryArrayMarkup(response)
     lightbox.refresh()
-
+    
     if (response.totalHits / options.pageItemCount < options.pageNumber) {
       refs.btnLoadMore.classList.add('is-hidden')
       return Notify.info("We're sorry, but you've reached the end of search results.");
     }
+    buttonDisabledFalse()
   } catch (error) {
     console.log(error)
   }
 }
-
+function buttonDisabledTrue() {
+  refs.btnLoadMore.setAttribute('disabled', true)
+}
+function buttonDisabledFalse() {
+  refs.btnLoadMore.removeAttribute('disabled')
+}
 
 //=========== разметкa =======
 function countryArrayMarkup(array) {
