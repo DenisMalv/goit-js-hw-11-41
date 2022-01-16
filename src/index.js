@@ -1,116 +1,169 @@
 import '../scss/custom.scss'
 import './css/styles.css';
+import SimpleLightbox from 'simplelightbox';
+import 'simplelightbox/dist/simple-lightbox.min.css';
 import { Notify } from "notiflix/build/notiflix-notify-aio";
-import { fetchCountries } from './fetchCountries'
-const debounce = require('lodash.debounce');
+import { fetchPhoto } from './fetchPhoto'
+import { options } from './fetchPhoto'
+import { preventOverflow } from '@popperjs/core';
+import { Button } from 'bootstrap';
 
-
-const DEBOUNCE_DELAY = 300;
 
 const refs = {
-    input: document.querySelector('#search-box'),
-    countryList: document.querySelector('.country-list'),
-    countryInfo: document.querySelector('.country-info')
+    form: document.querySelector('#search-form'),
+    gallery: document.querySelector('.gallery'),
+    btnLoadMore: document.querySelector('.load-more'),
 }
-const { input, countryList, countryInfo } = refs
-let someBase = null
+const formInput = refs.form.elements.searchQuery;
 
-input.addEventListener('input', debounce(onInputChangeValue, DEBOUNCE_DELAY))
+refs.form.addEventListener('submit', onFormSubmit)
+refs.btnLoadMore.addEventListener('click', onClickLoadMoreBtn)
 
-function onInputChangeValue(event) {
-console.log(event.target.value.trim())
-clearMarkup()
-const name = event.target.value.trim()
-    if (name.length >= 1) {
-        fetchCountries(name)
-            .then((responce) => {
-            console.log(responce)
-            localStorage.setItem('resp', JSON.stringify(responce))
-            if (responce.length > 10) {
-                return Notify.info("Too many matches found.Please enter a more specific name.");
-            }
-            if (responce.length !== 1) {
-                countryArrayMarkup(responce)
-            }
-                if (responce.length === 1) {
-                countryInfoMarkup(responce)
-            }
-        })
-        .catch((error) => {
-            clearMarkup()
-            Notify.failure("Oops, there is no country with that name");
-        });
+let lightbox 
+  
+//=========== асинк фн. при отправке формы =======
+async function onFormSubmit(event) {
+  event.preventDefault();
+  refs.gallery.innerHTML = ''
+  options.pageNumber = 1;
+  refs.btnLoadMore.classList.add('is-hidden')
+
+  if (formInput.value.trim() === '') {
+    Notify.info("You seen random photo")
+  }
+  try {
+    const response = await fetchPhoto(formInput.value)
+    if (response.hits.length === 0) {
+        return Notify.failure("Sorry, there are no images matching your search query. Please try again.")
     }
-    
+    Notify.info(`Hooray! We found ${response.totalHits} images.`)
+    countryArrayMarkup(response)
+
+    lightbox = new SimpleLightbox('.gallery a', {
+    captions: true, captionSelector: 'img', captionType: 'attr', captionsData: `alt`, captionPosition: 'bottom', captionDelay: 250
+    });
+    if (response.totalHits < options.pageItemCount) {          
+          return
+    }
+        console.log('current page:',options.pageNumber)
+        options.pageNumber += 1;
+        console.log('next page :',options.pageNumber)
+    setTimeout(() => refs.btnLoadMore.classList.remove('is-hidden'), 1000)
+  } catch (error) {
+    console.log('Это тот же эрор что и выше',error)
+  } 
 }
 
-console.log(someBase)
-function clearMarkup() {
-    countryList.innerHTML=''
-    countryInfo.innerHTML=''
+//=========== асинк фн. при подгрузке изображений =======
+async function onClickLoadMoreBtn() {
+  try {
+    const response = await fetchPhoto(formInput.value)
+    console.log('current page:',options.pageNumber)
+    options.pageNumber += 1
+    console.log('next page :', options.pageNumber)
+    countryArrayMarkup(response)
+    lightbox.refresh()
+
+    if (response.totalHits / options.pageItemCount < options.pageNumber) {
+      refs.btnLoadMore.classList.add('is-hidden')
+      return Notify.info("We're sorry, but you've reached the end of search results.");
+    }
+  } catch (error) {
+    console.log(error)
+  }
 }
 
-function countryInfoMarkup(object) {
 
-    const infoMarkup = object.map(({ name, flags, capital, population, languages }) => {
-
-        const eachLanguage = Object.values(languages).map((el)=>el).join(", ")
-        return `<p class="country_name"><img style="width:30px; margin-right:20px" class="country_flag" src="${flags.svg}" alt="${name.official}">${name.official}</p>
-        <p class="country_capital">Capital: ${capital}</p>
-        <p class="country_population">Population: ${population}</p>
-        <p class="country_languages">Languages: ${eachLanguage}</p>`
-    }).join('')
-    
-    countryInfo.insertAdjacentHTML('beforeend', infoMarkup)
-}
-
+//=========== разметкa =======
 function countryArrayMarkup(array) {
-    const arrayMarkup = array.map(({ name, flags,}) =>
+    const arrayMarkup = array.hits.map(({ webformatURL,largeImageURL,tags,likes ,views ,comments ,downloads , }) =>
     {
-        return `<li class="country_list_item" style="margin:10px;" ><img style="width:30px; margin-right:20px" src="${flags.svg}" alt="${name.common?name.common:name.official}"><span>${name.common?name.common:name.official}</span></li>`
+      // console.log(largeImageURL)
+      return `
+  <div class="photo-card">
+    <a href="${largeImageURL}">
+      <img src="${webformatURL}" alt="${tags}" loading="lazy" />
+    </a>
+    <div class="info">
+      <p class="info-item">
+        <b>likes ${likes}</b>
+      </p>
+      <p class="info-item">
+        <b>views ${views}</b>
+      </p>
+      <p class="info-item">
+        <b>comments ${comments}</b>
+      </p>
+      <p class="info-item">
+        <b>downloads ${downloads}</b>
+      </p>
+    </div>
+  </div>
+`
     }).join("")
-
-    countryList.insertAdjacentHTML('beforeend', arrayMarkup)
-    const eachLi = document.querySelectorAll(".country_list_item")
-    eachLi.forEach((li) => {
-        li.addEventListener('click', onCountryNameClick)
-    })
-    
-    console.log(eachLi)
+  refs.gallery.insertAdjacentHTML('beforeend', arrayMarkup)
 }
-function onCountryNameClick() {
 
-    console.log(event.currentTarget)
-    const LSbase = JSON.parse(localStorage.getItem('resp'))
-    console.log(LSbase)
-    
-    const res = LSbase.map(({ name, flags, capital, population, languages }) => {
-        
-        console.log(event.currentTarget.innerText)
-        console.log(name.common)
-        console.log(flags)
-        console.log(capital)
-        console.log(population)
-        // console.log(languages)
-        const eachLanguage = Object.values(languages).map((el)=>el).join(", ")
-        if (event.currentTarget.innerText === name.common) {
-            return `<p class="country_name"><img style="width:30px; margin-right:20px" class="country_flag" src="${flags.svg}" alt="${name.official}">${name.official}</p>
-        <p class="country_capital">Capital: ${capital}</p>
-        <p class="country_population">Population: ${population}</p>
-        <p class="country_languages">Languages: ${eachLanguage}</p>`
-        }
-    }).join('')
-        clearInfoMarkup()
-    
-    countryList.insertAdjacentHTML('afterbegin', res)
+//============ old variant onFormSubmit ============
+// function onFormSubmit(event) {
+//   event.preventDefault();
+//   refs.gallery.innerHTML = ''
+//   options.pageNumber = 1;
+//   refs.btnLoadMore.classList.add('is-hidden')
 
-}
-function clearInfoMarkup() {
-    console.dir(countryList)
-    countryList.childNodes.forEach((elem) => {
-        if (elem.nodeName === 'P') {
-            elem.innerHTML = ''
-        }
-    })
-}
-clearInfoMarkup()
+//   if (formInput.value.trim() === '') {
+//     Notify.info("You seen random photo")
+//   }
+
+
+//   fetchPhoto(formInput.value).then((response) => {
+//         countryArrayMarkup(response)
+//         console.log(response)
+//         options.pageNumber += 1;
+//         console.log(options.pageNumber)
+//         setTimeout(()=>refs.btnLoadMore.classList.remove('is-hidden'),1000)
+//   }).catch((error) => {
+//            console.log(error)
+//   });
+  
+  
+// }
+
+//============== old variant onClickLoadMoreBtn ==========
+// function onClickLoadMoreBtn () {
+//   fetchPhoto(formInput.value)
+//     .then((response) => {
+//       options.pageNumber += 1
+//       console.log(options.pageNumber)
+//       countryArrayMarkup(response)
+//       console.log(response)
+//     })
+//     .catch((error) => {
+//            console.log(error)
+//     });
+// }
+
+//============== old vatiant markup =========
+// function countryArrayMarkup(array) {
+//     const arrayMarkup = array.hits.map(({ webformatURL,largeImageURL,tags,likes ,views ,comments ,downloads , }) =>
+//     {
+//         return `<div class="photo-card">
+//   <img src="${webformatURL}" alt="${tags}" loading="lazy" />
+//   <div class="info">
+//     <p class="info-item">
+//       <b>likes ${likes}</b>
+//     </p>
+//     <p class="info-item">
+//       <b>views ${views}</b>
+//     </p>
+//     <p class="info-item">
+//       <b>comments ${comments}</b>
+//     </p>
+//     <p class="info-item">
+//       <b>downloads ${downloads}</b>
+//     </p>
+//   </div>
+// </div>`
+//     }).join("")
+//   refs.gallery.insertAdjacentHTML('beforeend', arrayMarkup)
+// }
