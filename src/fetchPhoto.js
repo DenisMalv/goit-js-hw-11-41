@@ -22,7 +22,7 @@ async function fetchPhoto(namePhoto) {
       q: namePhoto,
       image_type: "photo",
       orientation: "horizontal",
-      safesearch: "false",
+      safesearch: "true",
       page: options.pageNumber,
       per_page: options.pageItemCount,
     },
